@@ -20,7 +20,7 @@ class Photo{
     
     var dictionary: [String: Any] {
         let timeIntervalDate = date.timeIntervalSince1970
-        return ["description": description, "photoUserID": photoUserID, "photoUserEmail": photoUserEmail, "date": timeIntervalDate, "photoURL": photoURL, "documentID": documentID]
+        return ["description": description, "photoUserID": photoUserID, "photoUserEmail": photoUserEmail, "date": timeIntervalDate, "photoURL": photoURL]
     }
     
     init(image: UIImage, description: String, photoUserID: String, photoUserEmail: String, date: Date, photoURL: String, documentID: String) {
@@ -36,7 +36,7 @@ class Photo{
     convenience init () {
         let photoUserID = Auth.auth().currentUser?.uid ?? ""
         let photoUserEmail = Auth.auth().currentUser?.email ?? "unknown email"
-        self.init(image: UIImage(), description: "", photoUserID: "", photoUserEmail: "", date: Date(), photoURL: "", documentID: "")
+        self.init(image: UIImage(), description: "", photoUserID: photoUserID, photoUserEmail: photoUserEmail, date: Date(), photoURL: "", documentID: "")
     }
     
     convenience init(dictionary: [String: Any]) {
@@ -82,18 +82,28 @@ class Photo{
         uploadTask.observe(.success) { (snapshot) in
             print("Upload to Firebase Storage was successful!")
             
-            //TODO: update with photoURL for smoother image loading
-            
-            //create dictionary representing data we want to save
-            let dataToSave = self.dictionary
-            let ref = db.collection("spots").document(spot.documentID).collection("photos").document(self.documentID)
-            ref.setData(dataToSave) { (error) in
+            storageRef.downloadURL { (url, error) in
                 guard error == nil else{
-                    print("😡 ERROR: updating document \(error!.localizedDescription)")
+                    print("😡 ERROR: Couldn't create a download url \(error!.localizedDescription)")
                     return completion(false)
                 }
-                print("💨 Updated document: \(self.documentID) in spot: \(spot.documentID)") //it worked!
-                completion(true)
+                guard let url = url else {
+                    print("😡 ERROR: url was nil and this should not have happened because we've already shown there was no error.")
+                    return completion(false)
+                }
+                self.photoURL = "\(url)"
+                
+                //create dictionary representing data we want to save
+                let dataToSave = self.dictionary
+                let ref = db.collection("spots").document(spot.documentID).collection("photos").document(self.documentID)
+                ref.setData(dataToSave) { (error) in
+                    guard error == nil else{
+                        print("😡 ERROR: updating document \(error!.localizedDescription)")
+                        return completion(false)
+                    }
+                    print("💨 Updated document: \(self.documentID) in spot: \(spot.documentID)") //it worked!
+                    completion(true)
+                }
             }
         }
         
@@ -104,4 +114,23 @@ class Photo{
             completion(false)
         }
     }
+    
+    func loadImage(spot: Spot, completion: @escaping (Bool) -> ()){
+        guard spot.documentID != "" else {
+            print("😡 ERROR: Did not pass a valid spot into loadImage")
+            return
+        }
+        let storage = Storage.storage()
+        let storageRef = storage.reference().child(spot.documentID).child(documentID)
+        storageRef.getData(maxSize: 25 * 1024 * 1024) { (data, error) in
+            if let error = error {
+                print("😡 ERROR: An error occurred while reading data from file ref: \(storageRef) error = \(error.localizedDescription)")
+                return completion(false)
+            } else {
+                self.image = UIImage(data: data!) ?? UIImage()
+                return completion(true)
+            }
+        }
+    }
+    
 }
